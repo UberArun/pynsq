@@ -189,7 +189,7 @@ class Reader(Client):
             lookupd_http_addresses = []
 
         if lookupd_url:
-            assert isintance(lookupd_url, string_types)
+            assert isinstance(lookupd_url, string_types)
         assert nsqd_tcp_addresses or lookupd_http_addresses or lookupd_url
 
         self.name = name or (topic + ':' + channel)
