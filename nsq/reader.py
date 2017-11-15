@@ -111,6 +111,8 @@ class Reader(Client):
 
     :param lookupd_http_addresses: a sequence of string addresses of the nsqlookupd instances this
         reader should query for producers of the specified topic
+    
+    :param lookupd_url: an http address, including token param, of the nsqlookupd instance to use
 
     :param max_tries: the maximum number of attempts the reader will make to process a message after
         which messages will be automatically discarded
@@ -147,6 +149,7 @@ class Reader(Client):
             name=None,
             nsqd_tcp_addresses=None,
             lookupd_http_addresses=None,
+            lookupd_url=None,
             max_tries=5,
             max_in_flight=1,
             lookupd_poll_interval=60,
@@ -185,7 +188,9 @@ class Reader(Client):
         else:
             lookupd_http_addresses = []
 
-        assert nsqd_tcp_addresses or lookupd_http_addresses
+        if lookupd_url:
+            assert isintance(lookupd_url, string_types)
+        assert nsqd_tcp_addresses or lookupd_http_addresses or lookupd_url
 
         self.name = name or (topic + ':' + channel)
         self.message_handler = None
@@ -195,6 +200,7 @@ class Reader(Client):
         self.channel = channel
         self.nsqd_tcp_addresses = nsqd_tcp_addresses
         self.lookupd_http_addresses = lookupd_http_addresses
+        self.lookupd_url = lookupd_url
         self.lookupd_query_index = 0
         self.max_tries = max_tries
         self.max_in_flight = max_in_flight
@@ -558,25 +564,28 @@ class Reader(Client):
         """
         Trigger a query of the configured ``nsq_lookupd_http_addresses``.
         """
-        endpoint = self.lookupd_http_addresses[self.lookupd_query_index]
-        self.lookupd_query_index = (self.lookupd_query_index + 1) % len(self.lookupd_http_addresses)
+        lookupd_url = self.lookupd_url
+        
+        if not lookupd_url:
+            endpoint = self.lookupd_http_addresses[self.lookupd_query_index]
+            self.lookupd_query_index = (self.lookupd_query_index + 1) % len(self.lookupd_http_addresses)
 
-        # urlsplit() is faulty if scheme not present
-        if '://' not in endpoint:
-            endpoint = 'http://' + endpoint
+            # urlsplit() is faulty if scheme not present
+            if '://' not in endpoint:
+                endpoint = 'http://' + endpoint
 
-        scheme, netloc, path, query, fragment = urlparse.urlsplit(endpoint)
+            scheme, netloc, path, query, fragment = urlparse.urlsplit(endpoint)
 
-        if not path or path == "/":
-            path = "/lookup"
+            if not path or path == "/":
+                path = "/lookup"
 
-        params = parse_qs(query)
-        params['topic'] = self.topic
-        query = urlencode(_utf8_params(params), doseq=1)
-        lookupd_url = urlparse.urlunsplit((scheme, netloc, path, query, fragment))
+            params = parse_qs(query)
+            params['topic'] = self.topic
+            query = urlencode(_utf8_params(params), doseq=1)
+            lookupd_url = urlparse.urlunsplit((scheme, netloc, path, query, fragment))
 
         req = tornado.httpclient.HTTPRequest(
-            lookupd_url, method='GET',
+            self.lookupd_url, method='GET',
             headers={'Accept': 'application/vnd.nsq; version=1.0'},
             connect_timeout=self.lookupd_connect_timeout,
             request_timeout=self.lookupd_request_timeout)
